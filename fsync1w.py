@@ -9,7 +9,6 @@ stages = {0: 'INITIALIZING',
           1: 'SCANNING', 2: 'ANALYZING',
           3: 'DELETING', 4: 'CREATING', 5: 'COPYING',
           8: 'SUMMARY', 9: 'FINALIZING'}
-stage_dicts = [{'stage': v} for v in stages]
 
 
 def parse_cli_arguments():
@@ -369,18 +368,19 @@ if __name__ == '__main__':
 
         ext['stage'] = stages[9]
         logger.info('Synchronization STEP: finished!', extra=ext)
-        time.sleep(5)
+        time.sleep(3)
         if given_interval == 0:
             break
         else:
             remaining_interval = (tnext - dt.datetime.now()).total_seconds()
-            logger.info(f'Time until next synchronization step: {round(remaining_interval, 0)} seconds'
-                        , extra=ext)
+            logger.info(f'Time until next synchronization step: {round(remaining_interval, 0)} seconds',
+                        extra=ext)
             logger.info('{:*^50}'.format(f'  STEP: {stp_cnt}  '), extra=ext)
 
             if remaining_interval > 0:
                 time.sleep(remaining_interval)
             else:
-                logger.warning('\n\nLast synchronization did not finish before'
-                               ' next synchronization was supposed to start!!!\n\n', extra=ext)
-
+                logger.warning('\tWARNING!!!', extra=ext)
+                logger.warning('Last synchronization did not finish before'
+                               ' next synchronization was supposed to start!!!', extra=ext)
+                logger.warning('\tWARNING', extra=ext)
