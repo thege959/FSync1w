@@ -259,30 +259,40 @@ def copy_files(src_root, dst_root, nfiles, kind, extra=None):
     :param nfiles: list of files to the copied
     :param kind: type of files: NEW or MODIFIED, used in logging information
     :param extra: dictionary with extra information for logging purposes
-    :return: None
+    :return: number of OSError exceptions encountered. 0 = no expections
     """
     # Defining extra information for logging purposes
     if not extra:
         extra = {'stage': '', 'step': ''}
-
+    err_cnt = 0
     # Copying NEW/MODIFIED files
     if nfiles:
         logger.info(f'Copying {kind} files:', extra=extra)
         for f in nfiles:
             logger.info(f"    {src_root + f}", extra=extra)
-            shutil.copy2(src_root + f, dst_root + os.path.dirname(f))
+            try:
+                shutil.copy2(src_root + f, dst_root + os.path.dirname(f))
+            except OSError as e:
+                err_cnt += 1
+                logger.info(f"ERROR encountered when copying {src_root + f}", extra=extra)
+                logger.info(f"ERROR message: {e}", extra=extra)
+
         logger.info(f'Done', extra=extra)
     else:
         logger.info(f'No {kind} files to copy!', extra=extra)
 
+    return err_cnt
 
-def summarize(start_time, allstats, extra=None):
+
+def summarize(start_time, filestats, errstats, extra=None):
     """
     Summarizes the last synchornization step.
 
+
     :param start_time: datetime object created at the start of the synchornization step
-    :param allstats: lengths of the lists containing:
+    :param filestats: list of lengths of the lists containing:
         - new files, new folders, old files, old folders, modified files
+    :param errstats: list of error counters for the same categories
     :param extra: dictionary with extra information for logging purposes
     :return: None
     """
@@ -291,11 +301,11 @@ def summarize(start_time, allstats, extra=None):
 
     now = dt.datetime.now()
     logger.info(f'Process duration: {(now-start_time).total_seconds()} seconds', extra=extra)
-    logger.info(f'\t\tDeleted: {allstats[2]} files', extra=extra)
-    logger.info(f'\t\tDeleted: {allstats[3]} folders', extra=extra)
-    logger.info(f'\t\tCopied: {allstats[0]} files', extra=extra)
-    logger.info(f'\t\tCopied: {allstats[1]} folders', extra=extra)
-    logger.info(f'\t\tUpdated: {allstats[4]} files', extra=extra)
+    logger.info(f'\t\tDeleted: {filestats[2]} files', extra=extra)
+    logger.info(f'\t\tDeleted: {filestats[3]} folders', extra=extra)
+    logger.info(f'\t\tCopied: {filestats[0] - errstats[0]} files ({errstats[0]} errors)', extra=extra)
+    logger.info(f'\t\tCopied: {filestats[1]} folders', extra=extra)
+    logger.info(f'\t\tUpdated: {filestats[4] - errstats[4]} files ({errstats[4]} errors)', extra=extra)
 
 
 def _get_dir_files_relpath(entities_list):
@@ -359,23 +369,26 @@ if __name__ == '__main__':
         ext['stage'] = stages[4]
         create_new_folders(args.dst, new_dirs, ext)
         ext['stage'] = stages[5]
-        copy_files(args.src, args.dst, new_files, kind='NEW', extra=ext)
-        copy_files(args.src, args.dst, modified_files, kind='MODIFIED', extra=ext)
+        n_error_cnt = copy_files(args.src, args.dst, new_files, kind='NEW', extra=ext)
+        m_error_cnt = copy_files(args.src, args.dst, modified_files, kind='MODIFIED', extra=ext)
 
-        stats = [len(ent_list) for ent_list in [new_files, new_dirs, old_files, old_dirs, modified_files]]
+        file_stats = [len(ent_list) for ent_list in [new_files, new_dirs, old_files, old_dirs, modified_files]]
+        err_stats = [n_error_cnt, 0, 0, 0, m_error_cnt]
+
         ext['stage'] = stages[8]
-        summarize(tstart, stats, ext)
+        summarize(tstart, file_stats, err_stats, extra=ext)
 
         ext['stage'] = stages[9]
         logger.info('Synchronization STEP: finished!', extra=ext)
-        time.sleep(3)
+
+        # checking if interval was given and if yes, how much time until next synchronization
         if given_interval == 0:
             break
         else:
             remaining_interval = (tnext - dt.datetime.now()).total_seconds()
             logger.info(f'Time until next synchronization step: {round(remaining_interval, 0)} seconds',
                         extra=ext)
-            logger.info('{:*^50}'.format(f'  STEP: {stp_cnt}  '), extra=ext)
+            logger.info('{:*^50}'.format(f'  STEP: {stp_cnt} \n'), extra=ext)
 
             if remaining_interval > 0:
                 time.sleep(remaining_interval)
