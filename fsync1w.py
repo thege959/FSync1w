@@ -201,28 +201,41 @@ def clean_old_dirs_files(dst_root, ofiles, odirs, extra=None):
     """
     if not extra:
         extra = {'stage': '', 'step': ''}
-
+    d_err_cnt = 0
     # deleting OLD folders
     if odirs:
         odirs.sort(key=lambda x: -x.count('/'))  # sorting to respect folder hierarchy for deleting
         logger.info('Deleting OLD folders:', extra=extra)
         for d in odirs:
             logger.info(f"    {dst_root + d}", extra=extra)
-            shutil.rmtree(dst_root + d)
+            try:
+                shutil.rmtree(dst_root + d)
+            except OSError as e:
+                d_err_cnt += 1
+                logger.info(f"ERROR encountered when deleting {dst_root + d}", extra=extra)
+                logger.info(f"ERROR message: {e}", extra=extra)
         logger.info('Done!', extra=extra)
     else:
         logger.info('No OLD folders to delete!', extra=extra)
 
     # deleting OLD files
+    f_err_cnt = 0
     if ofiles:
         logger.info('Deleting remainig OLD files:', extra=extra)
         for f in ofiles:
             if os.path.exists(dst_root + f):
                 logger.info(f"    {dst_root + f}", extra=extra)
-                os.remove(dst_root + os.path.dirname(f) + f)
+                try:
+                    os.remove(dst_root + f)
+                except OSError as e:
+                    f_err_cnt += 1
+                    logger.info(f"ERROR encountered when deleting {dst_root + f}", extra=extra)
+                    logger.info(f"ERROR message: {e}", extra=extra)
         logger.info('Done!', extra=extra)
     else:
         logger.info('No OLD files to delete!', extra=extra)
+
+    return d_err_cnt, f_err_cnt
 
 
 def create_new_folders(dst_root, ndirs,  extra=None):
@@ -301,8 +314,8 @@ def summarize(start_time, filestats, errstats, extra=None):
 
     now = dt.datetime.now()
     logger.info(f'Process duration: {(now-start_time).total_seconds()} seconds', extra=extra)
-    logger.info(f'\t\tDeleted: {filestats[2]} files', extra=extra)
-    logger.info(f'\t\tDeleted: {filestats[3]} folders', extra=extra)
+    logger.info(f'\t\tDeleted: {filestats[2]-errstats[2]} files ({errstats[2]} errors)', extra=extra)
+    logger.info(f'\t\tDeleted: {filestats[3] - errstats[3]} folders ({errstats[3]} errors)', extra=extra)
     logger.info(f'\t\tCopied: {filestats[0] - errstats[0]} files ({errstats[0]} errors)', extra=extra)
     logger.info(f'\t\tCopied: {filestats[1]} folders', extra=extra)
     logger.info(f'\t\tUpdated: {filestats[4] - errstats[4]} files ({errstats[4]} errors)', extra=extra)
@@ -365,7 +378,7 @@ if __name__ == '__main__':
 
         # Starting the update
         ext['stage'] = stages[3]
-        clean_old_dirs_files(args.dst, old_files, old_dirs, ext)
+        ddel_error_cnt, fdel_error_cnt = clean_old_dirs_files(args.dst, old_files, old_dirs, ext)
         ext['stage'] = stages[4]
         create_new_folders(args.dst, new_dirs, ext)
         ext['stage'] = stages[5]
@@ -373,13 +386,17 @@ if __name__ == '__main__':
         m_error_cnt = copy_files(args.src, args.dst, modified_files, kind='MODIFIED', extra=ext)
 
         file_stats = [len(ent_list) for ent_list in [new_files, new_dirs, old_files, old_dirs, modified_files]]
-        err_stats = [n_error_cnt, 0, 0, 0, m_error_cnt]
+        err_stats = [n_error_cnt, 0, fdel_error_cnt, ddel_error_cnt, m_error_cnt]
 
         ext['stage'] = stages[8]
         summarize(tstart, file_stats, err_stats, extra=ext)
 
         ext['stage'] = stages[9]
-        logger.info('Synchronization STEP: finished!', extra=ext)
+        err_msg = 'SUCCESSFULLY'
+        if sum(err_stats) > 0:
+            err_msg = f'with {sum(err_stats)} error(s)!'
+
+        logger.info(f'Synchronization STEP: finished {err_msg}!', extra=ext)
 
         # checking if interval was given and if yes, how much time until next synchronization
         if given_interval == 0:
